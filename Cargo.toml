@@ -1,0 +1,11 @@
+[package]
+name = "x11test"
+version = "0.1.0"
+authors = ["Aaron Miller <aaron@iforgotmy.name>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+x11-dl = "2.18"
+thiserror = "1.0"
