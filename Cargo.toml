@@ -1,5 +1,5 @@
 [package]
-name = "x11test"
+name = "xgather"
 version = "0.1.0"
 authors = ["Aaron Miller <aaron@iforgotmy.name>"]
 edition = "2018"
