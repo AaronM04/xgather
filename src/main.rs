@@ -21,17 +21,19 @@ pub enum XError {
     WinInfoFail,
     #[error("failed to move window {}", window_id)]
     MoveWindowFail { window_id: u64 },
+    #[error("failed to get cursor position")]
+    GetCursorPosFail,
 }
 
 struct Display {
     display: *mut X::_XDisplay,
     pub xlib: Rc<X::Xlib>,
     pub screen: c_int,
+    pub root_win: u64,
 }
 
 impl Display {
     fn root_tree(&self) -> Result<Tree, XError> {
-        let root_win = unsafe { (self.xlib.XDefaultRootWindow)(self.display) };
         // we won't use root_return or parent_return
         let mut root_return = mem::MaybeUninit::<X::Window>::uninit();
         let mut parent_return = mem::MaybeUninit::<X::Window>::uninit();
@@ -40,7 +42,7 @@ impl Display {
         let status = unsafe {
             (self.xlib.XQueryTree)(
                 self.display,
-                root_win,
+                self.root_win,
                 root_return.as_mut_ptr(),
                 parent_return.as_mut_ptr(),
                 children.as_mut_ptr(),
@@ -113,6 +115,29 @@ impl Display {
         new_wininfo.x += xoffset;
         new_wininfo.y += yoffset;
         Ok(new_wininfo)
+    }
+
+    fn cursor_position(&self) -> Result<(c_int, c_int), XError> {
+        let mut root_return = mem::MaybeUninit::<X::Window>::uninit(); // unused
+        let mut child_return = mem::MaybeUninit::<X::Window>::uninit(); // unused
+        let mut root_x_return = mem::MaybeUninit::<c_int>::uninit();
+        let mut root_y_return = mem::MaybeUninit::<c_int>::uninit();
+        let mut win_x_return = mem::MaybeUninit::<c_int>::uninit(); // unused
+        let mut win_y_return = mem::MaybeUninit::<c_int>::uninit(); // unused
+        let mut mask_return = mem::MaybeUninit::<c_uint>::uninit(); // unused
+        unsafe {
+            (self.xlib.XQueryPointer)(self.display, self.root_win,
+                root_return.as_mut_ptr(),
+                child_return.as_mut_ptr(),
+                root_x_return.as_mut_ptr(),
+                root_y_return.as_mut_ptr(),
+                win_x_return.as_mut_ptr(),
+                win_y_return.as_mut_ptr(),
+                mask_return.as_mut_ptr()
+                )
+        };
+        // TODO: error handling?!?!?
+        unsafe { Ok((root_x_return.assume_init(), root_y_return.assume_init())) }
     }
 }
 
@@ -192,10 +217,13 @@ fn connect(xlib: Rc<X::Xlib>, display_name: Option<&str>) -> Result<Display, XEr
     // Store the screen because it'll come in handy
     let screen = unsafe { (xlib.XDefaultScreen)(display) };
 
+    let root_win = unsafe { (xlib.XDefaultRootWindow)(display) };
+
     Ok(Display {
         display,
         xlib,
         screen,
+        root_win,
     })
 }
 
@@ -212,8 +240,8 @@ fn calc_1d_offset(high: c_int, low: c_int, target: c_int) -> Option<c_int> {
 fn calc_2d_offset(wininfo: &WinInfo, x: c_int, y: c_int) -> Option<(c_int, c_int)> {
     let xoffset = calc_1d_offset(wininfo.x + wininfo.width - 1, wininfo.x, x);
     let yoffset = calc_1d_offset(wininfo.y + wininfo.height - 1, wininfo.y, y);
-    if xoffset.is_some() && yoffset.is_some() {
-        Some((xoffset.unwrap(), yoffset.unwrap()))
+    if xoffset.is_some() || yoffset.is_some() {
+        Some((xoffset.unwrap_or(0), yoffset.unwrap_or(0)))
     } else {
         None
     }
@@ -250,10 +278,10 @@ fn main() {
     }
     println!("FILTERED COUNT: {}", filtered_count);
 
-    println!("asking the window manager to move windows...");
-    let (pointerx, pointery) = (500, 2000); //XXX get pointer pos
+    let (xcursor, ycursor) = display.cursor_position().unwrap();
+    println!("asking the window manager to move windows to ({}, {})...", xcursor, ycursor);
     for wininfo in filtered_wininfos.iter() {
-        if let Some((xoffset, yoffset)) = calc_2d_offset(wininfo, pointerx, pointery) {
+        if let Some((xoffset, yoffset)) = calc_2d_offset(wininfo, xcursor, ycursor) {
             println!("MOVE win with id 0x{:0>7x} by ({:>5}, {:>5})", wininfo.id, xoffset, yoffset);
             display.move_window(wininfo, xoffset, yoffset).unwrap();
         }
