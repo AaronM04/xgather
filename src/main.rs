@@ -1,17 +1,17 @@
 /*
  * Copyright (c) 2020, Aaron Miller
  * All rights reserved.
- * 
+ *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
- * 
+ *
  * 1. Redistributions of source code must retain the above copyright notice, this
  *    list of conditions and the following disclaimer.
- * 
+ *
  * 2. Redistributions in binary form must reproduce the above copyright notice,
  *    this list of conditions and the following disclaimer in the documentation
  *    and/or other materials provided with the distribution.
- * 
+ *
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
  * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
  * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
@@ -151,15 +151,17 @@ impl Display {
         let mut win_y_return = mem::MaybeUninit::<c_int>::uninit(); // unused
         let mut mask_return = mem::MaybeUninit::<c_uint>::uninit(); // unused
         unsafe {
-            (self.xlib.XQueryPointer)(self.display, self.root_win,
+            (self.xlib.XQueryPointer)(
+                self.display,
+                self.root_win,
                 root_return.as_mut_ptr(),
                 child_return.as_mut_ptr(),
                 root_x_return.as_mut_ptr(),
                 root_y_return.as_mut_ptr(),
                 win_x_return.as_mut_ptr(),
                 win_y_return.as_mut_ptr(),
-                mask_return.as_mut_ptr()
-                )
+                mask_return.as_mut_ptr(),
+            )
         };
         // TODO: error handling?!?!?
         unsafe { Ok((root_x_return.assume_init(), root_y_return.assume_init())) }
@@ -287,15 +289,7 @@ fn main() {
     let mut filtered_count = 0;
     let filtered_wininfos: Vec<_> = wininfos
         .into_iter()
-        .filter_map(|wininfo| {
-            // using filter_map instead of filter because of weird borrow issue I don't have time
-            // to debug
-            if !wininfo.wm_should_ignore && wininfo.width > 10 && wininfo.height > 10 {
-                Some(wininfo)
-            } else {
-                None
-            }
-        })
+        .filter(|wininfo| !wininfo.wm_should_ignore && wininfo.width > 10 && wininfo.height > 10)
         .collect();
     for (i, wininfo) in filtered_wininfos.iter().enumerate() {
         println!("{:>4}: {}", i, wininfo);
@@ -304,10 +298,16 @@ fn main() {
     println!("FILTERED COUNT: {}", filtered_count);
 
     let (xcursor, ycursor) = display.cursor_position().unwrap();
-    println!("asking the window manager to move windows to ({}, {})...", xcursor, ycursor);
+    println!(
+        "asking the window manager to move windows to ({}, {})...",
+        xcursor, ycursor
+    );
     for wininfo in filtered_wininfos.iter() {
         if let Some((xoffset, yoffset)) = calc_2d_offset(wininfo, xcursor, ycursor) {
-            println!("MOVE win with id 0x{:0>7x} by ({:>5}, {:>5})", wininfo.id, xoffset, yoffset);
+            println!(
+                "MOVE win with id 0x{:0>7x} by ({:>5}, {:>5})",
+                wininfo.id, xoffset, yoffset
+            );
             display.move_window(wininfo, xoffset, yoffset).unwrap();
         }
     }
