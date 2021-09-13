@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, Aaron Miller
+ * Copyright (c) 2020-2021, Aaron Miller
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -27,7 +27,7 @@ extern crate x11_dl;
 
 use thiserror::Error;
 
-use std::ffi::{c_void, CString};
+use std::ffi::{c_void, CString, CStr};
 use std::fmt;
 use std::mem;
 use std::os::raw::{c_int, c_uint};
@@ -94,12 +94,27 @@ impl Display {
             return Err(XError::WinInfoFail);
         }
         let attr = unsafe { attr.assume_init() };
+
+        let mut name = None;
+        let mut name_ptr = mem::MaybeUninit::<*mut i8>::uninit();
+        let status =
+            unsafe { (self.xlib.XFetchName)(self.display, win, name_ptr.as_mut_ptr()) };
+        if status != 0 {
+            let name_ptr = unsafe { name_ptr.assume_init() };
+            let name_cstr: &CStr = unsafe { CStr::from_ptr(name_ptr) };
+            name = Some(name_cstr.to_str().unwrap().to_owned());
+            unsafe {
+                (self.xlib.XFree)(name_ptr as *mut c_void)
+            };
+        }
+
         Ok(WinInfo {
             id: win,
             height: attr.height,
             width: attr.width,
             x: attr.x,
             y: attr.y,
+            name,
             viewable: attr.map_state == X::IsViewable,
             wm_should_ignore: attr.override_redirect != 0,
         })
@@ -210,6 +225,7 @@ struct WinInfo {
     y: i32,
     width: i32,
     height: i32,
+    name: Option<String>,
     viewable: bool,
     wm_should_ignore: bool,
 }
@@ -223,8 +239,9 @@ impl fmt::Display for WinInfo {
         };
         write!(
             f,
-            "WinInfo{}: id 0x{:0>7x} pos ({:>5}, {:>5}) dim ({:>5}, {:>5}) wm_shld_ign {}",
-            hidden_str, self.id, self.x, self.y, self.width, self.height, self.wm_should_ignore
+            "WinInfo{}: id 0x{:0>8x} pos ({:>5}, {:>5}) dim ({:>5}, {:>5}) wm_shld_ign {} name {:?}",
+            hidden_str, self.id, self.x, self.y, self.width, self.height, self.wm_should_ignore,
+            self.name
         )
     }
 }
@@ -277,7 +294,7 @@ fn calc_2d_offset(wininfo: &WinInfo, x: c_int, y: c_int) -> Option<(c_int, c_int
 fn main() {
     let xlib = X::Xlib::open().unwrap();
     let xlib = Rc::new(xlib);
-    let display = connect(xlib.clone(), None).unwrap();
+    let display = connect(xlib, None).unwrap();
 
     let tree = display.root_tree().unwrap();
     let slice = tree.as_slice();
